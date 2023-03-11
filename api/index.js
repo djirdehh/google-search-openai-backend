@@ -14,8 +14,58 @@ const COMPLETIONS_MODEL = "gpt-3.5-turbo";
 
 const port = process.env.PORT || 5000;
 
+function tryParseJSONObject(jsonString) {
+  try {
+    var o = JSON.parse(jsonString);
+
+    // Handle non-exception-throwing cases:
+    // Neither JSON.parse(false) or JSON.parse(1234) throw errors, hence the type-checking,
+    // but... JSON.parse(null) returns null, and typeof null === "object",
+    // so we must check for that, too. Thankfully, null is falsey, so this suffices:
+    if (o && typeof o === "object") {
+      return o;
+    }
+  } catch (e) {
+    return null;
+  }
+
+  return null;
+}
+
+const initialMessages = (prompt) => [
+  {
+    role: "system",
+    content:
+      "You are ChatGPT, a search engine trained by OpenAI that returns results in a certain format.",
+  },
+  {
+    role: "user",
+    content: `I want you to answer the prompt in a certain format. You must create and return a single valid JSON object. The resulting JSON object must be in the format: {"link":"string","title":"string", description:"string"}.\n' +
+    '\n' +
+    'Do not return any other text in your response message. Only return the valid JSON object.\n' +
+    '\n' +
+    'The results should resemble the results that would come from a search engine.\n' +
+    '\n' +
+    '"link" must be a valid working link from the internet. "title" should be 5 to 10 words. "description" should be 10 to 15 words.\n' +
+    '\n' +
+    'Do not repeat any links, titles, or descriptions. Be creative. Input prompt begins: Who is Akon?`,
+  },
+  {
+    role: "assistant",
+    content:
+      '{"link":"https://en.wikipedia.org/wiki/Akon","title":"Akon Life and Music","description":"Akon is a Senegalese-American singer, rapper, songwriter, and entrepreneur."}',
+  },
+  {
+    role: "user",
+    content: `Do not repeat any links, titles, or descriptions. Be creative. Input prompt begins: ${prompt}`,
+  },
+];
+
 app.post("/api/ask", async (req, res) => {
   const prompt = req.body.prompt;
+  const messages = req.body.messages
+    ? req.body.messages
+    : initialMessages(prompt);
 
   try {
     if (prompt == null) {
@@ -24,28 +74,31 @@ app.post("/api/ask", async (req, res) => {
 
     const response = await openai.createChatCompletion({
       model: COMPLETIONS_MODEL,
-      messages: [
-        {
-          role: "system",
-          content: `
-            You are ChatGPT, a search engine trained by OpenAI that returns results in a certain format. Given a question, you must create a valid JSON object which enumerates a set of 10 child objects.
-            The resulting JSON object must be in the format: [{"link":"string","title":"string", description:"string"}].\n\n
-            "link" should be a working link from the internet. "title" should be 5 to 10 words. "description" should be 10 to 15 words.\n\n`,
-        },
-        { role: "user", content: `${prompt}` },
-      ],
-      max_tokens: 1000,
-      temperature: 0,
-      top_p: 0,
+      messages,
+      n: 1,
     });
+
+    const assistantResponse = response.data.choices[0].message.content.trim();
+
+    messages.push({
+      role: "assistant",
+      content: assistantResponse,
+    });
+
+    messages.push({
+      role: "user",
+      content: `Do not repeat any links, titles, or descriptions. Be creative. Input prompt begins: ${prompt}`,
+    });
+
+    const responseJSON = tryParseJSONObject(assistantResponse);
 
     // return the result
     return res.status(200).json({
       success: true,
-      message: response.data.choices[0].message.content.trim(),
+      data: responseJSON ? responseJSON : null,
+      messages,
     });
   } catch (error) {
-    console.log(error);
     console.log(error.message);
   }
 });
