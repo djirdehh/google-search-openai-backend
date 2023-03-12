@@ -68,7 +68,7 @@ app.post("/api/ask", async (req, res) => {
     : initialMessages(prompt);
 
   try {
-    if (prompt == null) {
+    if (prompt == null || prompt.trim() === "") {
       throw new Error("Uh oh, no prompt was provided");
     }
 
@@ -100,6 +100,11 @@ app.post("/api/ask", async (req, res) => {
     });
   } catch (error) {
     console.log(error.message);
+    return res.status(400).json({
+      success: false,
+      data: null,
+      messages: null,
+    });
   }
 });
 
